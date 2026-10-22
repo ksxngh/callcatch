@@ -29,7 +29,9 @@ const HANGUP =
   "<Response><Say>Sorry, no one is available right now. Please send us a text.</Say><Hangup/></Response>";
 
 function firstRecoverySms(companyName: string): string {
-  const msg = `Sorry we missed your call. This is the text line for ${companyName}. Tell us your name, the address, and what's happening with the plumbing, and someone will follow up.`;
+  // Identifies the sender and carries an opt-out notice (CASL/CTIA hygiene).
+  // Twilio enforces the actual STOP; this just advertises it.
+  const msg = `Sorry we missed your call. This is the text line for ${companyName}. Tell us your name, the address, and what's happening, and someone will follow up. Reply STOP to opt out.`;
   return msg.slice(0, 280);
 }
 
@@ -39,6 +41,15 @@ export async function POST(req: NextRequest) {
   const params: Record<string, string> = {};
   form.forEach((value, key) => { params[key] = String(value); });
   if (!verifyTwilioRequest(req, params)) return forbidden();
+
+  // Forwarded-call metadata varies by carrier: the original caller usually
+  // arrives as `From`, but some carriers put the business number in `From` and
+  // the caller in `ForwardedFrom`. Log it (non-sensitive call metadata) so the
+  // first real carrier-forwarded call tells us which, before we trust it.
+  console.log("[voice/incoming]", JSON.stringify({
+    From: params.From, To: params.To, ForwardedFrom: params.ForwardedFrom,
+    Caller: params.Caller, CallSid: params.CallSid, CallStatus: params.CallStatus,
+  }));
 
   const caller = String(form.get("From") ?? "");        // the customer who called
   const businessNumber = String(form.get("To") ?? "");  // the Twilio number the call landed on
